@@ -12,11 +12,44 @@ import (
 )
 
 type configuration struct {
-	Routes map[string]struct {
-		Headers map[string]string
-		Status  int
-		Payload string
-		Ref     string
+	Routes map[string]routeDef
+}
+
+type routeDef struct {
+	Headers map[string]string
+	Status  int
+	Payload string
+	Ref     string
+}
+
+func (d routeDef) Handler(path string) http.HandlerFunc {
+	status := d.Status
+	if status == 0 {
+		status = http.StatusOK
+	}
+
+	var body []byte
+	if d.Payload != "" {
+		body = []byte(d.Payload)
+	} else if d.Ref != "" {
+		data, err := ioutil.ReadFile(d.Ref)
+		if err != nil {
+			log.Fatalf("error reading referenced file: %+v\n", err)
+		}
+		body = data
+	}
+
+	log.Printf("Registering path: %s - %d\n", path, status)
+	return func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("%s: responding with status %d\n", path, status)
+		for k, v := range d.Headers {
+			w.Header().Set(k, v)
+		}
+
+		w.WriteHeader(status)
+		if _, err := w.Write(body); err != nil {
+			fmt.Printf("error writing response: %+v\n", err)
+		}
 	}
 }
 
@@ -45,37 +78,10 @@ func main() {
 
 	mux := http.NewServeMux()
 	for path, a := range config.Routes {
-		var body []byte
-		if a.Ref != "" {
-			data, err := ioutil.ReadFile(a.Ref)
-			if err != nil {
-				log.Fatalf("error reading referenced file: %+v\n", err)
-			}
-			body = data
-		}
-		if a.Payload != "" {
-			body = []byte(a.Payload)
-		}
-		status := a.Status
-		if status == 0 {
-			status = http.StatusOK
-		}
 		if !strings.HasPrefix(path, "/") {
 			path = "/" + path
 		}
-		log.Printf("Registering path: %s", path)
-		mux.Handle(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			log.Printf("%s: responding with status %d\n", path, a.Status)
-			for k, v := range a.Headers {
-				w.Header().Set(k, v)
-			}
-
-			w.WriteHeader(status)
-			if _, err := w.Write(body); err != nil {
-				fmt.Printf("error writing response: %+v\n", err)
-			}
-		}))
-
+		mux.Handle(path, a.Handler(path))
 	}
 	log.Println("Starting to listen on port", port)
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", port), mux); err != nil {
