@@ -1,0 +1,13 @@
+{
+    "routes": {
+        "/307": {
+            "status": 307,
+            "headers": {
+                "Location": "/ok"
+            }
+        },
+        "/ok": {
+            "payload": "ok"
+        }
+    }
+}
